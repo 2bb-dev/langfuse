@@ -130,7 +130,17 @@ export const entitlementAccess: Record<
     },
   },
   oss: {
-    entitlements: selfHostedAllPlansEntitlements,
+    // 2BB: All features unlocked for self-hosted OSS
+    entitlements: [
+      ...selfHostedAllPlansEntitlements,
+      "rbac-project-roles",
+      "self-host-allowed-organization-creators",
+      "self-host-ui-customization",
+      "audit-logs",
+      "data-retention",
+      "prompt-protected-labels",
+      "admin-api",
+    ],
     entitlementLimits: {
       "annotation-queue-count": false,
       "organization-member-count": false,
