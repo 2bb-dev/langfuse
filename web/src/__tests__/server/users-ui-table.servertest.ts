@@ -130,4 +130,91 @@ describe("getUserMetrics function", () => {
       totalCost: 125, // 50 + 75
     });
   });
+
+  it("surfaces openclaw_channel and coalesced openclaw sender identity", async () => {
+    const userId = uuidv4();
+    const traceA = uuidv4();
+    const traceB = uuidv4();
+
+    await createTracesCh([
+      createTrace({
+        id: traceA,
+        project_id: projectId,
+        user_id: userId,
+        metadata: {
+          openclaw_channel: "mattermost",
+          // username absent on this trace - falls back to name.
+          openclaw_sender_name: "@ziabinartem",
+          openclaw_sender_label: "@ziabinartem (pwanex3ne3fx58nr5oaxg4j54w)",
+        },
+      }),
+      createTrace({
+        id: traceB,
+        project_id: projectId,
+        user_id: userId,
+        metadata: {
+          openclaw_channel: "mattermost",
+          openclaw_sender_username: "ziabinartem",
+        },
+      }),
+    ]);
+
+    // One observation per trace is required for the inner join to return rows.
+    await createObservationsInClickhouse([
+      createObservationObject({
+        id: uuidv4(),
+        trace_id: traceA,
+        project_id: projectId,
+        type: "GENERATION",
+      }),
+      createObservationObject({
+        id: uuidv4(),
+        trace_id: traceB,
+        project_id: projectId,
+        type: "GENERATION",
+      }),
+    ]);
+
+    const result = await getUserMetrics(projectId, [userId], []);
+    expect(result).toHaveLength(1);
+    expect(result[0].openclawChannel).toBe("mattermost");
+    // username resolves via coalesce priority - one trace has username, the
+    // other falls back to name. Either non-empty value is acceptable since
+    // anyIf does not guarantee ordering.
+    expect(
+      ["ziabinartem", "@ziabinartem"].includes(
+        result[0].openclawUsername ?? "",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns null openclaw fields when trace metadata is missing", async () => {
+    const userId = uuidv4();
+    const traceId = uuidv4();
+
+    await createTracesCh([
+      createTrace({
+        id: traceId,
+        project_id: projectId,
+        user_id: userId,
+        metadata: {
+          source: "API",
+        },
+      }),
+    ]);
+
+    await createObservationsInClickhouse([
+      createObservationObject({
+        id: uuidv4(),
+        trace_id: traceId,
+        project_id: projectId,
+        type: "GENERATION",
+      }),
+    ]);
+
+    const result = await getUserMetrics(projectId, [userId], []);
+    expect(result).toHaveLength(1);
+    expect(result[0].openclawChannel).toBeNull();
+    expect(result[0].openclawUsername).toBeNull();
+  });
 });

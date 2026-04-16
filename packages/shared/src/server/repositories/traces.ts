@@ -1232,7 +1232,9 @@ export const getUserMetrics = async (
             sum(total_cost) as sum_total_cost,
             max(t.timestamp) as max_timestamp,
             min(t.timestamp) as min_timestamp,
-            count(distinct t.id) as trace_count
+            count(distinct t.id) as trace_count,
+            anyIf(t.openclaw_channel, t.openclaw_channel != '') as openclaw_channel,
+            anyIf(t.openclaw_username, t.openclaw_username != '') as openclaw_username
         FROM
             (
                 SELECT
@@ -1266,7 +1268,13 @@ export const getUserMetrics = async (
                     t.user_id,
                     t.project_id,
                     t.timestamp,
-                    t.environment
+                    t.environment,
+                    t.metadata['openclaw_channel'] as openclaw_channel,
+                    coalesce(
+                        nullIf(t.metadata['openclaw_sender_username'], ''),
+                        nullIf(t.metadata['openclaw_sender_name'], ''),
+                        nullIf(t.metadata['openclaw_sender_label'], '')
+                    ) as openclaw_username
                 FROM
                     __TRACE_TABLE__ t FINAL
                 WHERE
@@ -1288,7 +1296,9 @@ export const getUserMetrics = async (
         environment,
         sum_total_cost,
         max_timestamp,
-        min_timestamp
+        min_timestamp,
+        openclaw_channel,
+        openclaw_username
     FROM stats`;
 
   return measureAndReturn({
@@ -1327,6 +1337,8 @@ export const getUserMetrics = async (
         obs_count: string;
         trace_count: string;
         sum_total_cost: string;
+        openclaw_channel: string | null;
+        openclaw_username: string | null;
       }>({
         query: query.replaceAll("__TRACE_TABLE__", "traces"),
         params: input.params,
@@ -1344,6 +1356,8 @@ export const getUserMetrics = async (
         observationCount: Number(row.obs_count),
         traceCount: Number(row.trace_count),
         totalCost: Number(row.sum_total_cost),
+        openclawChannel: row.openclaw_channel || null,
+        openclawUsername: row.openclaw_username || null,
       }));
     },
   });

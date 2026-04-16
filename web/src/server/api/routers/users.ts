@@ -97,6 +97,8 @@ export const userRouter = createTRPCRouter({
         totalObservations: BigInt(metric.observationCount),
         totalTraces: BigInt(metric.traceCount),
         sumCalculatedTotalCost: metric.totalCost,
+        openclawChannel: metric.openclawChannel,
+        openclawUsername: metric.openclawUsername,
       }));
     }),
 
