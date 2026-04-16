@@ -33,6 +33,8 @@ import { Badge } from "@/src/components/ui/badge";
 
 type RowData = {
   userId: string;
+  channel?: string;
+  username?: string;
   environment?: string;
   firstEvent: string;
   lastEvent: string;
@@ -304,6 +306,49 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
       },
     },
     {
+      accessorKey: "channel",
+      header: "Channel",
+      id: "channel",
+      size: 120,
+      enableHiding: true,
+      headerTooltip: {
+        description:
+          "OpenClaw source channel (e.g. telegram, mattermost) derived from trace metadata.",
+      },
+      cell: ({ row }) => {
+        const value: RowData["channel"] = row.getValue("channel");
+        if (!userMetrics.isSuccess) {
+          return <Skeleton className="h-3 w-1/2" />;
+        }
+        return value ? (
+          <Badge
+            variant="secondary"
+            className="max-w-fit truncate rounded-sm px-1 font-normal"
+          >
+            {value}
+          </Badge>
+        ) : null;
+      },
+    },
+    {
+      accessorKey: "username",
+      header: "Username",
+      id: "username",
+      size: 180,
+      enableHiding: true,
+      headerTooltip: {
+        description:
+          "Human-readable sender name from OpenClaw trace metadata (username / name / label in that order).",
+      },
+      cell: ({ row }) => {
+        const value: RowData["username"] = row.getValue("username");
+        if (!userMetrics.isSuccess) {
+          return <Skeleton className="h-3 w-1/2" />;
+        }
+        return value ?? null;
+      },
+    },
+    {
       accessorKey: "environment",
       header: "Environment",
       id: "environment",
@@ -444,6 +489,8 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
                   data: userRowData.rows?.map((t) => {
                     return {
                       userId: t.id,
+                      channel: t.openclawChannel ?? undefined,
+                      username: t.openclawUsername ?? undefined,
                       environment: t.environment ?? undefined,
                       firstEvent:
                         t.firstTrace?.toLocaleString() ?? "No event yet",
