@@ -9,6 +9,7 @@ import {
   extractAdditionalInput,
 } from "@/src/utils/chatml";
 import type { ChatMlMessageSchema } from "@/src/components/schemas/ChatMlSchema";
+import { isSystemRole } from "../components/chat-message-utils";
 
 // ChatML message type from schema
 export type ChatMlMessage = z.infer<typeof ChatMlMessageSchema>;
@@ -46,6 +47,19 @@ function parseToolCallsFromMessage(
       : [];
 }
 
+export interface UseChatMLParserOptions {
+  /**
+   * When true, drop messages whose role is system/developer/tool_definitions
+   * from the rendered chat transcript. The underlying trace payload is
+   * untouched — JSON views still display the full input/output.
+   *
+   * Defaults to true: every current caller is a trace/observation detail or
+   * preview surface where leaking multi-KB system prompts makes Preview
+   * useless for scanning conversations (see 2BB-289).
+   */
+  hideSystemMessages?: boolean;
+}
+
 /**
  * Hook to parse input/output into ChatML format and extract tool information.
  *
@@ -67,7 +81,9 @@ export function useChatMLParser(
   preParsedInput?: unknown,
   preParsedOutput?: unknown,
   preParsedMetadata?: unknown,
+  options: UseChatMLParserOptions = {},
 ): ChatMLParserResult {
+  const { hideSystemMessages = true } = options;
   // Use pre-parsed data if available (from Web Worker), otherwise parse synchronously
   // This eliminates ~100ms of duplicate parsing when data comes from useParsedObservation
   const parsedInput =
@@ -95,16 +111,22 @@ export function useChatMLParser(
     const outputClean = cleanLegacyOutput(parsedOutput, parsedOutput);
 
     // Combine messages
-    const messages = combineInputOutputMessages(
+    const combinedMessages = combineInputOutputMessages(
       inResult,
       outResult,
       outputClean,
     );
 
-    // Extract all unique tools from messages (no numbering yet)
+    // Optionally hide system/developer/tool_definitions messages from the
+    // pretty render (Preview tab). Tools are extracted from ALL messages
+    // (pre-filter) so the SectionToolDefinitions catalog stays populated even
+    // when the only carrier of `tools` was a system message.
+    const rawInputMessageCount = inResult.success ? inResult.data.length : 0;
     const toolsMap = new Map<string, ToolDefinition>();
+    const messages: typeof combinedMessages = [];
+    let inputMessageCount = 0;
 
-    for (const message of messages) {
+    combinedMessages.forEach((message, i) => {
       if (message.tools && Array.isArray(message.tools)) {
         for (const tool of message.tools) {
           if (!toolsMap.has(tool.name)) {
@@ -112,11 +134,14 @@ export function useChatMLParser(
           }
         }
       }
-    }
+
+      if (hideSystemMessages && isSystemRole(message.role)) return;
+      messages.push(message);
+      if (i < rawInputMessageCount) inputMessageCount++;
+    });
 
     // Count tool call invocations
     // Only number tool calls from OUTPUT messages (current invocation), not input (history)
-    const inputMessageCount = inResult.success ? inResult.data.length : 0;
     let toolCallCounter = 0;
     const messageToToolCallNumbers = new Map<number, number[]>();
     const toolCallCounts = new Map<string, number>();
@@ -184,7 +209,13 @@ export function useChatMLParser(
       toolNameToDefinitionNumber,
       inputMessageCount,
     };
-  }, [parsedInput, parsedOutput, parsedMetadata, observationName]);
+  }, [
+    parsedInput,
+    parsedOutput,
+    parsedMetadata,
+    observationName,
+    hideSystemMessages,
+  ]);
 }
 
 // Re-export for use in ChatMessage
