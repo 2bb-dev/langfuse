@@ -82,6 +82,25 @@ export function parseToolCallsFromMessage(
 }
 
 /**
+ * Roles that carry system-level instructions, tool catalogs, skills, or
+ * operator rules rather than user/assistant turns. These messages bloat the
+ * Preview tab with content that is rarely what reviewers want to see.
+ *
+ * The full payload (including these messages) remains visible in the JSON and
+ * JSON Beta views — this is a render-layer filter only.
+ */
+const SYSTEM_ROLES = new Set(["system", "developer", "tool_definitions"]);
+
+/**
+ * Check if a ChatML role represents a system/developer/instruction message.
+ * Case-insensitive to accommodate upstream role casing variations.
+ */
+export function isSystemRole(role: string | undefined | null): boolean {
+  if (!role) return false;
+  return SYSTEM_ROLES.has(role.toLowerCase());
+}
+
+/**
  * Check if message has thinking content.
  */
 export function hasThinkingContent(message: ChatMlMessage): boolean {

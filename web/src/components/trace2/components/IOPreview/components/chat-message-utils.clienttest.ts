@@ -6,6 +6,7 @@ import {
   hasPassthroughJson,
   isPlaceholderMessage,
   isOnlyJsonMessage,
+  isSystemRole,
   shouldRenderMessage,
   parseToolCallsFromMessage,
 } from "./chat-message-utils";
@@ -311,6 +312,37 @@ describe("chat-message-utils", () => {
           }),
         ),
       ).toEqual(directToolCalls);
+    });
+  });
+
+  describe("isSystemRole", () => {
+    it("returns true for system", () => {
+      expect(isSystemRole("system")).toBe(true);
+    });
+
+    it("returns true for developer", () => {
+      expect(isSystemRole("developer")).toBe(true);
+    });
+
+    it("returns true for tool_definitions", () => {
+      expect(isSystemRole("tool_definitions")).toBe(true);
+    });
+
+    it("is case-insensitive", () => {
+      expect(isSystemRole("System")).toBe(true);
+      expect(isSystemRole("DEVELOPER")).toBe(true);
+    });
+
+    it("returns false for user/assistant/tool", () => {
+      expect(isSystemRole("user")).toBe(false);
+      expect(isSystemRole("assistant")).toBe(false);
+      expect(isSystemRole("tool")).toBe(false);
+    });
+
+    it("returns false for empty / undefined / null", () => {
+      expect(isSystemRole("")).toBe(false);
+      expect(isSystemRole(undefined)).toBe(false);
+      expect(isSystemRole(null)).toBe(false);
     });
   });
 });
