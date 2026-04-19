@@ -2677,6 +2677,7 @@ export const getUsersFromEventsTable = async (
     .where(appliedEventsFilter)
     .whereRaw("e.user_id IS NOT NULL AND length(e.user_id) > 0")
     .whereRaw("e.is_deleted = 0")
+    .whereRaw("NOT has(e.tags, 'litellm-internal-health-check')")
     .when(Boolean(searchQuery), (b) =>
       b.whereRaw("e.user_id ILIKE {searchQuery: String}", {
         searchQuery: `%${searchQuery}%`,
@@ -2723,6 +2724,7 @@ export const getUsersCountFromEventsTable = async (
     AND e.user_id IS NOT NULL
     AND e.user_id != ''
     AND e.is_deleted = 0
+    AND NOT has(e.tags, 'litellm-internal-health-check')
     ${appliedEventsFilter.query ? `AND ${appliedEventsFilter.query}` : ""}
     ${searchCondition}
   `;
@@ -2774,13 +2776,27 @@ export const getUserMetricsFromEventsTable = async (
       sumMap(e.usage_details) as sum_usage_details,
       sum(e.total_cost) as sum_total_cost,
       min(e.start_time) as min_timestamp,
-      max(e.start_time) as max_timestamp
+      max(e.start_time) as max_timestamp,
+      anyIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_channel'], mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_channel'] != '') as openclaw_channel,
+      anyIf(
+        coalesce(
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_username'], ''),
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_name'], ''),
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_label'], '')
+        ),
+        coalesce(
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_username'], ''),
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_name'], ''),
+          nullIf(mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['openclaw_sender_label'], '')
+        ) IS NOT NULL
+      ) as openclaw_username
     `,
   })
     .whereRaw("e.user_id IN ({userIds: Array(String)})", { userIds })
     // not required if called from tRPC (user_id is always defined), left in for safety only
     .whereRaw("e.user_id IS NOT NULL AND length(e.user_id) > 0")
     .whereRaw("e.is_deleted = 0")
+    .whereRaw("NOT has(e.tags, 'litellm-internal-health-check')")
     .where(appliedEventsFilter);
 
   const { query: statsQuery, params: statsParams } =
@@ -2796,6 +2812,8 @@ export const getUserMetricsFromEventsTable = async (
       sum_total_cost,
       min_timestamp,
       max_timestamp,
+      openclaw_channel,
+      openclaw_username,
       arraySum(mapValues(mapFilter(x -> positionCaseInsensitive(x.1, 'input') > 0, sum_usage_details))) as input_usage,
       arraySum(mapValues(mapFilter(x -> positionCaseInsensitive(x.1, 'output') > 0, sum_usage_details))) as output_usage,
       sum_usage_details['total'] as total_usage
@@ -2813,6 +2831,8 @@ export const getUserMetricsFromEventsTable = async (
     obs_count: string;
     trace_count: string;
     sum_total_cost: string;
+    openclaw_channel: string | null;
+    openclaw_username: string | null;
   }>({
     query,
     params: statsParams,
@@ -2835,6 +2855,8 @@ export const getUserMetricsFromEventsTable = async (
     observationCount: Number(row.obs_count),
     traceCount: Number(row.trace_count),
     totalCost: Number(row.sum_total_cost),
+    openclawChannel: row.openclaw_channel || null,
+    openclawUsername: row.openclaw_username || null,
   }));
 };
 

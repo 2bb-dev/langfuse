@@ -611,6 +611,33 @@ export default function TracesTable({
       },
     },
     {
+      accessorKey: "model",
+      header: "Model",
+      id: "model",
+      size: 150,
+      enableHiding: true,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const metadata = row.original.metadata as
+          | { model?: unknown }
+          | null
+          | undefined;
+        const metadataModel =
+          metadata && typeof metadata.model === "string"
+            ? metadata.model
+            : undefined;
+        if (metadataModel) return metadataModel;
+        const name: TracesTableRow["name"] = row.getValue("name");
+        if (typeof name === "string" && name.startsWith("litellm-")) {
+          const slashIdx = name.indexOf("/");
+          if (slashIdx >= 0 && slashIdx < name.length - 1) {
+            return name.slice(slashIdx + 1);
+          }
+        }
+        return undefined;
+      },
+    },
+    {
       accessorKey: "input",
       header: "Input",
       id: "input",
