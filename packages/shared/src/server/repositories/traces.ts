@@ -790,6 +790,7 @@ export const getTracesGroupedByUsers = async (
         WHERE t.project_id = {projectId: String}
         AND t.user_id IS NOT NULL
         AND t.user_id != ''
+        AND NOT has(t.tags, 'litellm-internal-health-check')
         ${tracesFilterRes?.query ? `AND ${tracesFilterRes.query}` : ""}
         ${search.query}
         GROUP BY user
@@ -1120,12 +1121,18 @@ export const hasAnyUser = async (projectId: string) => {
       },
     },
     fn: async (input) => {
+      // The heartbeat-tag filter mirrors the one on getUsersCountFromEventsTable
+      // and getTracesGroupedByUsers — without it, projects whose only tagged
+      // user rows are LiteLLM health-check probes would report "data exists"
+      // here while the filtered table/metrics endpoints return zero rows,
+      // leaving the onboarding wizard permanently hidden.
       const query = `
         SELECT 1
         FROM traces
         WHERE project_id = {projectId: String}
         AND user_id IS NOT NULL
         AND user_id != ''
+        AND NOT has(tags, 'litellm-internal-health-check')
         LIMIT 1
       `;
 
@@ -1186,6 +1193,7 @@ export const getTotalUserCount = async (
         ${search.query}
         AND t.user_id IS NOT NULL
         AND t.user_id != ''
+        AND NOT has(t.tags, 'litellm-internal-health-check')
       `;
 
       return queryClickhouse({
@@ -1259,6 +1267,7 @@ export const getUserMetrics = async (
                         where
                             user_id IN ({userIds: Array(String) })
                             AND project_id = {projectId: String }
+                            AND NOT has(t.tags, 'litellm-internal-health-check')
                             ${filter.length > 0 ? `AND ${chFilterRes.query}` : ""}
                     )
             ) as o
@@ -1280,6 +1289,7 @@ export const getUserMetrics = async (
                 WHERE
                     t.user_id IN ({userIds: Array(String) })
                     AND t.project_id = {projectId: String }
+                    AND NOT has(t.tags, 'litellm-internal-health-check')
                     ${filter.length > 0 ? `AND ${chFilterRes.query}` : ""}
             ) as t on t.id = o.trace_id
             and t.project_id = o.project_id
