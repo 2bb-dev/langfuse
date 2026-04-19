@@ -2867,7 +2867,11 @@ export const getUserMetricsFromEventsTable = async (
 export const hasAnyUserFromEventsTable = async (
   projectId: string,
 ): Promise<boolean> => {
-  // Filter out deleted rows
+  // Filter out deleted rows + heartbeat probes so the "any user" gate lines
+  // up with the filtered table/metrics endpoints (see getUsersFromEventsTable,
+  // getUsersCountFromEventsTable, getUserMetricsFromEventsTable). Otherwise
+  // projects whose only tagged user rows are LiteLLM health-checks would
+  // report "data exists" while the list endpoint returns zero.
   const query = `
     SELECT 1
     FROM events_core
@@ -2875,6 +2879,7 @@ export const hasAnyUserFromEventsTable = async (
     AND user_id IS NOT NULL
     AND user_id != ''
     AND is_deleted = 0
+    AND NOT has(tags, 'litellm-internal-health-check')
     LIMIT 1
   `;
 

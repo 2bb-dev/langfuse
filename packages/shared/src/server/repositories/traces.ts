@@ -1121,12 +1121,18 @@ export const hasAnyUser = async (projectId: string) => {
       },
     },
     fn: async (input) => {
+      // The heartbeat-tag filter mirrors the one on getUsersCountFromEventsTable
+      // and getTracesGroupedByUsers — without it, projects whose only tagged
+      // user rows are LiteLLM health-check probes would report "data exists"
+      // here while the filtered table/metrics endpoints return zero rows,
+      // leaving the onboarding wizard permanently hidden.
       const query = `
         SELECT 1
         FROM traces
         WHERE project_id = {projectId: String}
         AND user_id IS NOT NULL
         AND user_id != ''
+        AND NOT has(tags, 'litellm-internal-health-check')
         LIMIT 1
       `;
 
