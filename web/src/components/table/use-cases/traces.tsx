@@ -618,15 +618,10 @@ export default function TracesTable({
       enableHiding: true,
       enableSorting: false,
       cell: ({ row }) => {
-        const metadata = row.original.metadata as
-          | { model?: unknown }
-          | null
-          | undefined;
-        const metadataModel =
-          metadata && typeof metadata.model === "string"
-            ? metadata.model
-            : undefined;
-        if (metadataModel) return metadataModel;
+        // `TracesTableUiReturnType` does not include metadata, so we can
+        // only derive the model from fields already in the row. LiteLLM
+        // sets trace name to `litellm-<endpoint>/<model>` — parse the
+        // segment after the slash.
         const name: TracesTableRow["name"] = row.getValue("name");
         if (typeof name === "string" && name.startsWith("litellm-")) {
           const slashIdx = name.indexOf("/");
