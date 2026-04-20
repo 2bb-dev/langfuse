@@ -12,11 +12,62 @@ import { z } from "zod";
  * These are permissive - only validate structural markers, not full API contracts
  */
 
+function hasResponsesInputItems(input: unknown): boolean {
+  return (
+    Array.isArray(input) &&
+    input.some((item) => {
+      if (!item || typeof item !== "object") return false;
+
+      const obj = item as Record<string, unknown>;
+      return "role" in obj || "type" in obj || "content" in obj;
+    })
+  );
+}
+
+function hasResponsesRequestMarkers(data: Record<string, unknown>): boolean {
+  return (
+    "tools" in data ||
+    "reasoning" in data ||
+    "store" in data ||
+    "include" in data ||
+    "instructions" in data ||
+    "previous_response_id" in data ||
+    "truncation" in data ||
+    "max_output_tokens" in data ||
+    "parallel_tool_calls" in data
+  );
+}
+
+function hasStringResponsesInput(data: Record<string, unknown>): boolean {
+  if (typeof data.input !== "string") return false;
+  if (hasResponsesRequestMarkers(data)) return true;
+
+  return (
+    typeof data.model === "string" &&
+    !data.model.toLowerCase().includes("embedding")
+  );
+}
+
 // INPUT SCHEMAS (requests)
 const OpenAIInputChatCompletionsSchema = z.looseObject({
   messages: z.array(z.any()),
   tools: z.array(z.any()).optional(),
 });
+
+const OpenAIInputResponsesSchema = z
+  .looseObject({
+    input: z.union([z.string(), z.array(z.any())]),
+    tools: z.array(z.any()).optional(),
+  })
+  .refine((data) => {
+    if (typeof data.input === "string") {
+      return hasStringResponsesInput(data);
+    }
+
+    return (
+      hasResponsesInputItems(data.input) || hasResponsesRequestMarkers(data)
+    );
+  });
 
 const OpenAIInputMessagesSchema = z
   .array(
@@ -266,6 +317,17 @@ function normalizeMessage(msg: unknown): Record<string, unknown> {
   return normalized;
 }
 
+function normalizeResponsesInputItem(item: unknown): Record<string, unknown> {
+  if (typeof item === "string") {
+    return {
+      role: "user",
+      content: item,
+    };
+  }
+
+  return normalizeMessage(item);
+}
+
 /**
  * Flatten tool definition from nested or flat format to standard format
  * Handles both Chat Completions {type, function: {name, ...}} and flat {name, ...}
@@ -288,7 +350,18 @@ function flattenToolDefinition(tool: unknown): Record<string, unknown> {
 function preprocessData(data: unknown): unknown {
   if (!data) return data;
 
-  // OpenAI Chat Completions API: {tools, messages} OR Responses API: {tools, output}
+  const looksLikeResponsesInput =
+    typeof data === "object" &&
+    data !== null &&
+    !Array.isArray(data) &&
+    "input" in data &&
+    (hasResponsesInputItems((data as Record<string, unknown>).input) ||
+      hasStringResponsesInput(data as Record<string, unknown>) ||
+      hasResponsesRequestMarkers(data as Record<string, unknown>));
+
+  // OpenAI Chat Completions API: {tools, messages}
+  // OpenAI Responses API request: {tools, input}
+  // OpenAI Responses API response: {tools, output}
   // References:
   // - https://platform.openai.com/docs/api-reference/chat/create
   // - https://platform.openai.com/docs/api-reference/responses
@@ -296,17 +369,46 @@ function preprocessData(data: unknown): unknown {
     typeof data === "object" &&
     !Array.isArray(data) &&
     "tools" in data &&
-    (("messages" in data && !("output" in data)) || "output" in data)
+    (("messages" in data && !("output" in data) && !("input" in data)) ||
+      looksLikeResponsesInput ||
+      "output" in data)
   ) {
     const obj = data as Record<string, unknown>;
-    const messagesArray = (obj.messages ?? obj.output) as unknown[];
+    const messagesArray = obj.messages ?? obj.input ?? obj.output;
 
-    if (Array.isArray(messagesArray) && Array.isArray(obj.tools)) {
+    if (
+      (Array.isArray(messagesArray) || typeof messagesArray === "string") &&
+      Array.isArray(obj.tools)
+    ) {
+      const normalizedMessages = Array.isArray(messagesArray)
+        ? "input" in obj
+          ? messagesArray.map(normalizeResponsesInputItem)
+          : messagesArray.map(normalizeMessage)
+        : [normalizeResponsesInputItem(messagesArray)];
+
       // Attach tools to all messages
-      return messagesArray.map((msg) => ({
-        ...normalizeMessage(msg),
+      return normalizedMessages.map((msg) => ({
+        ...msg,
         tools: (obj.tools as unknown[]).map(flattenToolDefinition),
       }));
+    }
+  }
+
+  // Responses API request without tools: {input: [...] | "text"}
+  if (
+    typeof data === "object" &&
+    !Array.isArray(data) &&
+    looksLikeResponsesInput &&
+    !("messages" in data) &&
+    !("tools" in data) &&
+    !("output" in data)
+  ) {
+    const obj = data as Record<string, unknown>;
+    if (Array.isArray(obj.input)) {
+      return (obj.input as unknown[]).map(normalizeResponsesInputItem);
+    }
+    if (typeof obj.input === "string") {
+      return [normalizeResponsesInputItem(obj.input)];
     }
   }
 
@@ -447,6 +549,7 @@ export const openAIAdapter: ProviderAdapter = {
     // STRUCTURAL: Schema-based detection on metadata
     if (OpenAIInputChatCompletionsSchema.safeParse(ctx.metadata).success)
       return true;
+    if (OpenAIInputResponsesSchema.safeParse(ctx.metadata).success) return true;
     if (OpenAIInputMessagesSchema.safeParse(ctx.metadata).success) return true;
     if (OpenAIOutputResponsesSchema.safeParse(ctx.metadata).success)
       return true;
@@ -458,6 +561,7 @@ export const openAIAdapter: ProviderAdapter = {
     // data into metadata. we only do this last due to performance concerns.
     if (OpenAIInputChatCompletionsSchema.safeParse(ctx.data).success)
       return true;
+    if (OpenAIInputResponsesSchema.safeParse(ctx.data).success) return true;
     if (OpenAIInputMessagesSchema.safeParse(ctx.data).success) return true;
     if (OpenAIOutputResponsesSchema.safeParse(ctx.data).success) return true;
     if (OpenAIOutputChoicesSchema.safeParse(ctx.data).success) return true;

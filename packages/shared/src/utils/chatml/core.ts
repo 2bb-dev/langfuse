@@ -87,7 +87,9 @@ export function extractAdditionalInput(
   const additionalInput =
     typeof input === "object" && input !== null && !Array.isArray(input)
       ? Object.fromEntries(
-          Object.entries(input as object).filter(([key]) => key !== "messages"),
+          Object.entries(input as object).filter(
+            ([key]) => key !== "messages" && key !== "input",
+          ),
         )
       : undefined;
 
