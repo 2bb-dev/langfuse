@@ -48,6 +48,16 @@ describe("OpenAI Adapter", () => {
         }),
       ).toBe(true);
 
+      // Responses API request format with {input, tools}
+      expect(
+        openAIAdapter.detect({
+          metadata: {
+            input: [{ role: "user", content: "test" }],
+            tools: [{ type: "function", function: { name: "test" } }],
+          },
+        }),
+      ).toBe(true);
+
       // Response format with nested tool_calls (via data field)
       expect(
         openAIAdapter.detect({
@@ -98,6 +108,43 @@ describe("OpenAI Adapter", () => {
 
       // Should still successfully detect as OpenAI format despite null items
       expect(openAIAdapter.detect({ metadata: messagesWithNull })).toBe(true);
+    });
+
+    it("should not treat embedding-style input payloads as Responses chat", () => {
+      expect(
+        openAIAdapter.detect({
+          metadata: {
+            input: ["hello world"],
+            model: "text-embedding-3-small",
+          },
+        }),
+      ).toBe(false);
+
+      expect(
+        openAIAdapter.detect({
+          metadata: {
+            input: "hello world",
+            model: "text-embedding-3-small",
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it("should autodetect plain string Responses requests when model is non-embedding", () => {
+      const input = {
+        input: "Hello from responses",
+        model: "gpt-4.1",
+      };
+
+      expect(openAIAdapter.detect({ metadata: input })).toBe(true);
+
+      const result = normalizeInput(input);
+
+      expect(result.success).toBe(true);
+      expect(result.data?.[0]).toMatchObject({
+        role: "user",
+        content: "Hello from responses",
+      });
     });
   });
 
@@ -180,6 +227,61 @@ describe("OpenAI Adapter", () => {
     const result = normalizeInput(input, { framework: "openai" });
     expect(result.success).toBe(true);
     expect(Array.isArray(result.data?.[0].content)).toBe(true);
+  });
+
+  it("should normalize Responses API input requests", () => {
+    const input = {
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "Hello from responses" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "lookup_weather",
+            description: "Weather lookup",
+          },
+        },
+      ],
+    };
+
+    const result = normalizeInput(input, { framework: "openai" });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0].role).toBe("user");
+    expect(result.data?.[0].content).toEqual([
+      { type: "input_text", text: "Hello from responses" },
+    ]);
+    expect(result.data?.[0].tools?.[0].name).toBe("lookup_weather");
+  });
+
+  it("should normalize string Responses API input requests", () => {
+    const input = {
+      input: "Hello from responses",
+      max_output_tokens: 256,
+    };
+
+    const result = normalizeInput(input, { framework: "openai" });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      role: "user",
+      content: "Hello from responses",
+    });
+  });
+
+  it("should not normalize embedding-style input payloads as chat", () => {
+    const input = {
+      input: ["hello world"],
+      model: "text-embedding-3-small",
+    };
+
+    const result = normalizeInput(input, { framework: "openai" });
+
+    expect(result.success).toBe(false);
   });
 
   it("should remove null fields from messages", () => {

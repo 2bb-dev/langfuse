@@ -45,6 +45,27 @@ describe("ChatML Integration", () => {
     });
   });
 
+  it("should exclude Responses API input from additionalInput", () => {
+    const input = {
+      input: [{ role: "user", content: "Hello from responses" }],
+      model: "gpt-5.4",
+      max_output_tokens: 2048,
+    };
+
+    const inResult = normalizeInput(input, { framework: "openai" });
+    const additionalInput = extractAdditionalInput(input);
+
+    expect(inResult.success).toBe(true);
+    expect(inResult.data?.[0]).toMatchObject({
+      role: "user",
+      content: "Hello from responses",
+    });
+    expect(additionalInput).toEqual({
+      model: "gpt-5.4",
+      max_output_tokens: 2048,
+    });
+  });
+
   it("should handle nested array format [[ChatML...]]", () => {
     const input = [
       [

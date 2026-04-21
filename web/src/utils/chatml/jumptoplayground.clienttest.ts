@@ -763,6 +763,27 @@ describe("Playground Jump Full Pipeline", () => {
     }
   });
 
+  it("should autodetect plain Responses string input for playground conversion", () => {
+    const input = {
+      input: "Hello from responses",
+      model: "gpt-4.1",
+    };
+
+    const inResult = normalizeInput(input);
+    expect(inResult.success).toBe(true);
+
+    const playgroundMessages = inResult
+      .data!.map(convertChatMlToPlayground)
+      .filter((msg) => msg !== null);
+
+    expect(playgroundMessages).toHaveLength(1);
+    expect(playgroundMessages[0]?.type).toBe("public-api-created");
+    if (playgroundMessages[0]?.type === "public-api-created") {
+      expect(playgroundMessages[0].role).toBe("user");
+      expect(playgroundMessages[0].content).toBe("Hello from responses");
+    }
+  });
+
   it("should handle VAPI camelCase toolCalls and preserve IDs", () => {
     // VAPI uses camelCase toolCalls instead of tool_calls
     // Critical: Tool call IDs must be preserved for OpenAI API compatibility
